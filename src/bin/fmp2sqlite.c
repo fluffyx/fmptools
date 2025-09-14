@@ -38,6 +38,8 @@ typedef struct fmp_sqlite_ctx_s {
     sqlite3_stmt *insert_stmt;
     char *table_name;
     int last_row;
+    int *column_index_map;  /* Maps FileMaker column index to SQLite parameter position */
+    int max_column_index;   /* Maximum column index we've seen */
 } fmp_sqlite_ctx_t;
 
 fmp_handler_status_t handle_value(int row, fmp_column_t *column, const char *value, void *ctxp) {
@@ -55,9 +57,10 @@ fmp_handler_status_t handle_value(int row, fmp_column_t *column, const char *val
         }
         sqlite3_clear_bindings(ctx->insert_stmt);
     }
+    /* Use column->index as the parameter position since we're using it in the SQL query */
     int rc = sqlite3_bind_text(ctx->insert_stmt, column->index, value, strlen(value), SQLITE_TRANSIENT);
     if (rc != SQLITE_OK) {
-        fprintf(stderr, "Error binding parameter: %s\n", sqlite3_errmsg(ctx->db));
+        fprintf(stderr, "Error binding parameter at index %d: %s\n", column->index, sqlite3_errmsg(ctx->db));
         return FMP_HANDLER_ABORT;
     }
     ctx->last_row = row;
@@ -510,16 +513,37 @@ int main(int argc, char *argv[]) {
             return 1;
         }
 
-        fmp_sqlite_ctx_t ctx = { .db = db, .table_name = table->utf8_name, .insert_stmt = stmt };
+        /* Create column index map for this table */
+        int max_idx = 0;
+        for (int j = 0; j < columns->count; j++) {
+            if (columns->columns[j].index > max_idx) {
+                max_idx = columns->columns[j].index;
+            }
+        }
+
+        int *col_map = calloc(max_idx + 1, sizeof(int));
+        for (int j = 0; j < columns->count; j++) {
+            col_map[columns->columns[j].index] = j + 1;  /* SQLite params are 1-based */
+        }
+
+        fmp_sqlite_ctx_t ctx = {
+            .db = db,
+            .table_name = table->utf8_name,
+            .insert_stmt = stmt,
+            .column_index_map = col_map,
+            .max_column_index = max_idx
+        };
         fmp_read_values(file, table, &handle_value, &ctx);
         if (ctx.last_row) {
             int rc = sqlite3_step(stmt);
             if (rc != SQLITE_DONE) {
                 fprintf(stderr, "Error inserting data into SQLite table: %s\n", sqlite3_errmsg(db));
+                free(col_map);
                 return 1;
             }
         }
         sqlite3_finalize(stmt);
+        free(col_map);
         /* Don't free columns here anymore - we'll free them all at the end */
     }
 
