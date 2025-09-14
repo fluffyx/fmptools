@@ -1,0 +1,154 @@
+{
+  "version": 2,
+  "created": 1757826353,
+  "tables": [
+    {
+      "index": 1,
+      "skip": 0,
+      "name": "Untitled",
+      "columns": [
+      ]
+    },
+    {
+      "index": 2,
+      "skip": 0,
+      "name": "US Population",
+      "columns": [
+      ]
+    },
+    {
+      "index": 3,
+      "skip": 0,
+      "name": "Demo",
+      "columns": [
+      ]
+    },
+    {
+      "index": 4,
+      "skip": 0,
+      "name": "Congress",
+      "columns": [
+        {"index": 1, "type": 0, "collation": 0, "name": "Name"},
+        {"index": 2, "type": 0, "collation": 0, "name": "State"},
+        {"index": 3, "type": 0, "collation": 0, "name": "Party"},
+        {"index": 4, "type": 0, "collation": 0, "name": "Liberal_Economic"},
+        {"index": 5, "type": 0, "collation": 0, "name": "Liberal_Social"},
+        {"index": 6, "type": 0, "collation": 0, "name": "Liberal_Foreign"},
+        {"index": 7, "type": 0, "collation": 0, "name": "Liberal_Composite"},
+        {"index": 8, "type": 0, "collation": 0, "name": "Liberal_Rank"},
+        {"index": 9, "type": 0, "collation": 0, "name": "Conservative_Economic"},
+        {"index": 10, "type": 0, "collation": 0, "name": "Conservative_Social"},
+        {"index": 11, "type": 0, "collation": 0, "name": "Conservative_Foreign"},
+        {"index": 12, "type": 0, "collation": 0, "name": "Conservative_Composite"},
+        {"index": 13, "type": 0, "collation": 0, "name": "Conservative_Rank"},
+        {"index": 14, "type": 0, "collation": 0, "name": "District"},
+        {"index": 15, "type": 0, "collation": 0, "name": "Chamber"},
+        {"index": 17, "type": 0, "collation": 0, "name": "Comp_C_Average"},
+        {"index": 18, "type": 0, "collation": 0, "name": "Comp_L_Average"},
+        {"index": 19, "type": 0, "collation": 0, "name": "ACLU"},
+        {"index": 20, "type": 0, "collation": 0, "name": "Econ_L_Average"},
+        {"index": 21, "type": 0, "collation": 0, "name": "Econ_C_Average"},
+        {"index": 22, "type": 0, "collation": 0, "name": "Soc_C_Average"},
+        {"index": 23, "type": 0, "collation": 0, "name": "Soc_L_Average"},
+        {"index": 24, "type": 0, "collation": 0, "name": "For_C_Average"},
+        {"index": 25, "type": 0, "collation": 0, "name": "For_L_Average"},
+        {"index": 26, "type": 0, "collation": 0, "name": "CFG_Rank"},
+        {"index": 27, "type": 0, "collation": 0, "name": "CFG_Score"},
+        {"index": 30, "type": 0, "collation": 0, "name": "party count"},
+        {"index": 31, "type": 0, "collation": 0, "name": "Conservative_StdDev"},
+        {"index": 32, "type": 0, "collation": 0, "name": "Liberal_StdDev"}
+      ]
+    },
+    {
+      "index": 5,
+      "skip": 0,
+      "name": "Grades",
+      "columns": [
+        {"index": 1, "type": 0, "collation": 0, "name": "Name"},
+        {"index": 2, "type": 0, "collation": 0, "name": "GPA"},
+        {"index": 3, "type": 0, "collation": 0, "name": "Study Hours per Week"}
+      ]
+    },
+    {
+      "index": 6,
+      "skip": 0,
+      "name": "US Coasters",
+      "columns": [
+        {"index": 1, "type": 0, "collation": 0, "name": "Roller Coaster"},
+        {"index": 2, "type": 0, "collation": 0, "name": "Amusement Park"},
+        {"index": 3, "type": 0, "collation": 0, "name": "Type"},
+        {"index": 4, "type": 0, "collation": 0, "name": "Design"},
+        {"index": 5, "type": 0, "collation": 0, "name": "Speed"},
+        {"index": 6, "type": 0, "collation": 0, "name": "Height"},
+        {"index": 7, "type": 0, "collation": 0, "name": "YearOpened"},
+        {"index": 8, "type": 0, "collation": 0, "name": "Length"},
+        {"index": 9, "type": 0, "collation": 0, "name": "Inversions"},
+        {"index": 10, "type": 0, "collation": 0, "name": "LocationState"},
+        {"index": 11, "type": 0, "collation": 0, "name": "LocationState Count"}
+      ]
+    },
+    {
+      "index": 7,
+      "skip": 0,
+      "name": "NW Customers",
+      "columns": [
+        {"index": 1, "type": 0, "collation": 0, "name": "Customer"},
+        {"index": 2, "type": 0, "collation": 0, "name": "Total Sales"}
+      ]
+    },
+    {
+      "index": 8,
+      "skip": 0,
+      "name": "NW Line Items",
+      "columns": [
+        {"index": 1, "type": 0, "collation": 0, "name": "Ship Name"},
+        {"index": 2, "type": 0, "collation": 0, "name": "Ship Address"},
+        {"index": 3, "type": 0, "collation": 0, "name": "Ship City"},
+        {"index": 4, "type": 0, "collation": 0, "name": "Ship Region"},
+        {"index": 5, "type": 0, "collation": 0, "name": "Ship Postal Code"},
+        {"index": 6, "type": 0, "collation": 0, "name": "Ship Country"},
+        {"index": 7, "type": 0, "collation": 0, "name": "Customer"},
+        {"index": 8, "type": 0, "collation": 0, "name": "Company Name"},
+        {"index": 9, "type": 0, "collation": 0, "name": "Address"},
+        {"index": 10, "type": 0, "collation": 0, "name": "City"},
+        {"index": 11, "type": 0, "collation": 0, "name": "Region"},
+        {"index": 12, "type": 0, "collation": 0, "name": "Postal Code"},
+        {"index": 13, "type": 0, "collation": 0, "name": "Country"},
+        {"index": 14, "type": 0, "collation": 0, "name": "Salesperson"},
+        {"index": 15, "type": 0, "collation": 0, "name": "Order ID"},
+        {"index": 16, "type": 0, "collation": 0, "name": "Order Date"},
+        {"index": 17, "type": 0, "collation": 0, "name": "Required Date"},
+        {"index": 18, "type": 0, "collation": 0, "name": "Shipped Date"},
+        {"index": 19, "type": 0, "collation": 0, "name": "_Company Name"},
+        {"index": 20, "type": 0, "collation": 0, "name": "Product"},
+        {"index": 21, "type": 0, "collation": 0, "name": "Product Name"},
+        {"index": 22, "type": 0, "collation": 0, "name": "Unit Price"},
+        {"index": 23, "type": 0, "collation": 0, "name": "Quantity"},
+        {"index": 24, "type": 0, "collation": 0, "name": "Discount"},
+        {"index": 25, "type": 0, "collation": 0, "name": "Extended Price"},
+        {"index": 26, "type": 0, "collation": 0, "name": "Freight"},
+        {"index": 27, "type": 0, "collation": 0, "name": "Extended Price Total"}
+      ]
+    },
+    {
+      "index": 9,
+      "skip": 0,
+      "name": "NW Salespeople",
+      "columns": [
+        {"index": 1, "type": 0, "collation": 0, "name": "Salesperson"},
+        {"index": 2, "type": 0, "collation": 0, "name": "Count Customers"},
+        {"index": 3, "type": 0, "collation": 0, "name": "Sum Total Sales"}
+      ]
+    },
+    {
+      "index": 10,
+      "skip": 0,
+      "name": "NW SalespersonCustomers",
+      "columns": [
+        {"index": 1, "type": 0, "collation": 0, "name": "Salesperson"},
+        {"index": 2, "type": 0, "collation": 0, "name": "Customer"},
+        {"index": 3, "type": 0, "collation": 0, "name": "Total Sales"}
+      ]
+    }
+  ]
+}

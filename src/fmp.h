@@ -128,6 +128,12 @@ typedef struct fmp_table_array_s {
     fmp_table_t *tables;
 } fmp_table_array_t;
 
+typedef struct fmp_metadata_s {
+    fmp_table_array_t *tables;
+    fmp_column_array_t **columns; /* Array of column arrays, indexed by table index */
+    size_t columns_capacity;
+} fmp_metadata_t;
+
 typedef struct fmp_data_s {
     size_t len;
     uint8_t *bytes;
@@ -194,12 +200,14 @@ fmp_file_t *fmp_open_buffer(const void *buffer, size_t len, fmp_error_t *errorCo
 
 fmp_table_array_t *fmp_list_tables(fmp_file_t *file, fmp_error_t *errorCode);
 fmp_column_array_t *fmp_list_columns(fmp_file_t *file, fmp_table_t *table, fmp_error_t *errorCode);
+fmp_metadata_t *fmp_discover_all_metadata(fmp_file_t *file, fmp_error_t *errorCode);
 fmp_error_t fmp_read_values(fmp_file_t *file, fmp_table_t *table, fmp_value_handler handle_value, void *ctx);
 fmp_error_t fmp_dump_file(fmp_file_t *file);
 
 void fmp_close_file(fmp_file_t *file);
 void fmp_free_tables(fmp_table_array_t *array);
 void fmp_free_columns(fmp_column_array_t *array);
+void fmp_free_metadata(fmp_metadata_t *metadata);
 
 #ifdef __cplusplus
 }

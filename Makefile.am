@@ -41,7 +41,8 @@ libfmptools_la_SOURCES = \
 	src/scsu.c \
 	src/list_columns.c \
 	src/list_tables.c \
-	src/read_values.c
+	src/read_values.c \
+	src/discover_metadata.c
 
 libfmptools_la_LIBADD = @LIBICONV@
 libfmptools_la_CFLAGS = -Wall -Werror -pedantic-errors

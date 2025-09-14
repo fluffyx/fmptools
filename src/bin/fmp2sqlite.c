@@ -134,9 +134,7 @@ static int is_cache_valid(const char* cache_file, const char* fmp_path) {
     return cache_st.st_mtime >= fmp_st.st_mtime;
 }
 
-static int save_metadata_cache(const char* cache_file,
-                               fmp_table_array_t* tables,
-                               fmp_column_array_t** all_columns) {
+static int save_metadata_cache(const char* cache_file, fmp_metadata_t* metadata) {
     FILE* fp = fopen(cache_file, "w");
     if (!fp) {
         fprintf(stderr, "Warning: Could not create cache file %s\n", cache_file);
@@ -145,13 +143,15 @@ static int save_metadata_cache(const char* cache_file,
 
     /* Write simple JSON format */
     fprintf(fp, "{\n");
-    fprintf(fp, "  \"version\": 1,\n");
+    fprintf(fp, "  \"version\": 2,\n");  /* Version 2 for new format */
     fprintf(fp, "  \"created\": %ld,\n", (long)time(NULL));
     fprintf(fp, "  \"tables\": [\n");
 
-    for (int i = 0; i < tables->count; i++) {
-        fmp_table_t* table = &tables->tables[i];
-        fmp_column_array_t* columns = all_columns[i];
+    for (int i = 0; i < metadata->tables->count; i++) {
+        fmp_table_t* table = &metadata->tables->tables[i];
+        /* Get columns for this table (indexed by table->index) */
+        fmp_column_array_t* columns = (table->index < metadata->columns_capacity && metadata->columns[table->index])
+                                      ? metadata->columns[table->index] : NULL;
 
         fprintf(fp, "    {\n");
         fprintf(fp, "      \"index\": %d,\n", table->index);
@@ -159,17 +159,19 @@ static int save_metadata_cache(const char* cache_file,
         fprintf(fp, "      \"name\": \"%s\",\n", table->utf8_name);
         fprintf(fp, "      \"columns\": [\n");
 
-        for (int j = 0; j < columns->count; j++) {
-            fmp_column_t* col = &columns->columns[j];
-            fprintf(fp, "        {\"index\": %d, \"type\": %d, \"collation\": %d, \"name\": \"%s\"}",
-                    col->index, col->type, col->collation, col->utf8_name);
-            if (j < columns->count - 1) fprintf(fp, ",");
-            fprintf(fp, "\n");
+        if (columns) {
+            for (int j = 0; j < columns->count; j++) {
+                fmp_column_t* col = &columns->columns[j];
+                fprintf(fp, "        {\"index\": %d, \"type\": %d, \"collation\": %d, \"name\": \"%s\"}",
+                        col->index, col->type, col->collation, col->utf8_name);
+                if (j < columns->count - 1) fprintf(fp, ",");
+                fprintf(fp, "\n");
+            }
         }
 
         fprintf(fp, "      ]\n");
         fprintf(fp, "    }");
-        if (i < tables->count - 1) fprintf(fp, ",");
+        if (i < metadata->tables->count - 1) fprintf(fp, ",");
         fprintf(fp, "\n");
     }
 
@@ -181,12 +183,10 @@ static int save_metadata_cache(const char* cache_file,
     return 0;
 }
 
-static int load_metadata_cache(const char* cache_file,
-                               fmp_table_array_t** tables_out,
-                               fmp_column_array_t*** all_columns_out) {
+static fmp_metadata_t* load_metadata_cache(const char* cache_file) {
     FILE* fp = fopen(cache_file, "r");
     if (!fp) {
-        return -1;
+        return NULL;
     }
 
     /* Get file size */
@@ -198,16 +198,20 @@ static int load_metadata_cache(const char* cache_file,
     char* buffer = malloc(file_size + 1);
     if (!buffer) {
         fclose(fp);
-        return -1;
+        return NULL;
     }
 
     if (fread(buffer, 1, file_size, fp) != file_size) {
         free(buffer);
         fclose(fp);
-        return -1;
+        return NULL;
     }
     buffer[file_size] = '\0';
     fclose(fp);
+
+    /* Create metadata structure */
+    fmp_metadata_t* metadata = calloc(1, sizeof(fmp_metadata_t));
+    metadata->tables = calloc(1, sizeof(fmp_table_array_t));
 
     /* Simple JSON parsing - very basic, assumes well-formed cache */
     char* p = buffer;
@@ -224,21 +228,16 @@ static int load_metadata_cache(const char* cache_file,
         scan++;
     }
 
-    /* Allocate arrays */
-    fmp_table_array_t* tables = calloc(1, sizeof(fmp_table_array_t));
-    tables->count = 0;
-    tables->tables = calloc(table_count, sizeof(fmp_table_t));
-
-    fmp_column_array_t** all_columns = calloc(table_count, sizeof(fmp_column_array_t*));
+    /* Allocate table array */
+    metadata->tables->count = 0;
+    metadata->tables->tables = calloc(table_count, sizeof(fmp_table_t));
 
     /* Parse tables - simple approach */
     char* table_start = strstr(p, "\"tables\": [");
     if (!table_start) {
         free(buffer);
-        free(tables->tables);
-        free(tables);
-        free(all_columns);
-        return -1;
+        fmp_free_metadata(metadata);
+        return NULL;
     }
 
     int table_idx = 0;
@@ -251,7 +250,7 @@ static int load_metadata_cache(const char* cache_file,
         char* table_index = strstr(current, "\"index\":");
         if (!table_index) break;
 
-        fmp_table_t* table = &tables->tables[table_idx];
+        fmp_table_t* table = &metadata->tables->tables[table_idx];
 
         /* Parse table fields */
         sscanf(table_index, "\"index\": %d", &table->index);
@@ -289,10 +288,20 @@ static int load_metadata_cache(const char* cache_file,
             }
         }
 
+        /* Ensure columns capacity for this table index */
+        int t_idx = table->index > 0 ? table->index : table_idx + 1;
+        if (t_idx >= metadata->columns_capacity) {
+            size_t new_cap = t_idx + 10;
+            metadata->columns = realloc(metadata->columns, new_cap * sizeof(fmp_column_array_t*));
+            memset(&metadata->columns[metadata->columns_capacity], 0,
+                   (new_cap - metadata->columns_capacity) * sizeof(fmp_column_array_t*));
+            metadata->columns_capacity = new_cap;
+        }
+
         /* Allocate columns array */
-        all_columns[table_idx] = calloc(1, sizeof(fmp_column_array_t));
-        all_columns[table_idx]->count = col_count;
-        all_columns[table_idx]->columns = calloc(col_count, sizeof(fmp_column_t));
+        metadata->columns[t_idx] = calloc(1, sizeof(fmp_column_array_t));
+        metadata->columns[t_idx]->count = col_count;
+        metadata->columns[t_idx]->columns = calloc(col_count, sizeof(fmp_column_t));
 
         /* Parse columns */
         char* col_current = columns_start;
@@ -300,7 +309,7 @@ static int load_metadata_cache(const char* cache_file,
             col_current = strstr(col_current, "{");
             if (!col_current || col_current > columns_end) break;
 
-            fmp_column_t* col = &all_columns[table_idx]->columns[j];
+            fmp_column_t* col = &metadata->columns[t_idx]->columns[j];
 
             char* idx = strstr(col_current, "\"index\":");
             if (idx && idx < columns_end) {
@@ -337,7 +346,7 @@ static int load_metadata_cache(const char* cache_file,
         }
 
         table_idx++;
-        tables->count++;
+        metadata->tables->count++;
 
         /* Move to next table object - find the closing brace after columns */
         current = columns_end;
@@ -351,11 +360,8 @@ static int load_metadata_cache(const char* cache_file,
 
     free(buffer);
 
-    *tables_out = tables;
-    *all_columns_out = all_columns;
-
-    fprintf(stderr, "Cache loaded from %s (%zu tables)\n", cache_file, tables->count);
-    return 0;
+    fprintf(stderr, "Cache loaded from %s (%zu tables)\n", cache_file, metadata->tables->count);
+    return metadata;
 }
 
 int main(int argc, char *argv[]) {
@@ -391,47 +397,34 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    fmp_table_array_t *tables = NULL;
-    fmp_column_array_t **all_columns = NULL;
+    fmp_metadata_t *metadata = NULL;
     int cache_loaded = 0;
 
     /* Try to use cache if enabled */
     char* cache_file = get_cache_filename(input_file);
     if (cache_file && is_cache_valid(cache_file, input_file)) {
-        if (load_metadata_cache(cache_file, &tables, &all_columns) == 0) {
+        metadata = load_metadata_cache(cache_file);
+        if (metadata) {
             cache_loaded = 1;
             fprintf(stderr, "Using cached metadata, skipping table/column discovery\n");
         }
     }
 
-    /* If cache not loaded, do the discovery */
+    /* If cache not loaded, do the single-scan discovery */
     if (!cache_loaded) {
-        fprintf(stderr, "Discovering tables...\n");
-        tables = fmp_list_tables(file, &error);
-        if (!tables) {
-            fprintf(stderr, "Error code: %d\n", error);
+        fprintf(stderr, "Discovering all tables and columns in a single scan...\n");
+        metadata = fmp_discover_all_metadata(file, &error);
+        if (!metadata) {
+            fprintf(stderr, "Error discovering metadata: %d\n", error);
             if (cache_file) free(cache_file);
+            fmp_close_file(file);
             return 1;
         }
-
-        /* Discover all columns and store them */
-        all_columns = calloc(tables->count, sizeof(fmp_column_array_t*));
-        fprintf(stderr, "Discovering columns for %zu tables...\n", tables->count);
-        for (int i = 0; i < tables->count; i++) {
-            fmp_table_t *table = &tables->tables[i];
-            all_columns[i] = fmp_list_columns(file, table, &error);
-            if (!all_columns[i]) {
-                fprintf(stderr, "Error getting columns for table %s: %d\n", table->utf8_name, error);
-                /* Continue anyway, some tables might work */
-                all_columns[i] = calloc(1, sizeof(fmp_column_array_t));
-                all_columns[i]->count = 0;
-                all_columns[i]->columns = NULL;
-            }
-        }
+        fprintf(stderr, "Discovered %zu tables\n", metadata->tables->count);
 
         /* Save to cache if we have a cache filename */
         if (cache_file && use_cache) {
-            save_metadata_cache(cache_file, tables, all_columns);
+            save_metadata_cache(cache_file, metadata);
         }
     }
 
@@ -457,9 +450,11 @@ int main(int argc, char *argv[]) {
     char *create_query = NULL;
     char *insert_query = NULL;
 
-    for (int i=0; i<tables->count; i++) {
-        fmp_table_t *table = &tables->tables[i];
-        fmp_column_array_t *columns = all_columns[i];
+    for (int i=0; i<metadata->tables->count; i++) {
+        fmp_table_t *table = &metadata->tables->tables[i];
+        /* Get columns for this table (indexed by table->index) */
+        fmp_column_array_t *columns = (table->index < metadata->columns_capacity && metadata->columns[table->index])
+                                      ? metadata->columns[table->index] : NULL;
         if (!columns || columns->count == 0) {
             fprintf(stderr, "Skipping table %s (no columns)\n", table->utf8_name);
             continue;
@@ -531,17 +526,8 @@ int main(int argc, char *argv[]) {
     free(create_query);
     free(insert_query);
 
-    /* Free all columns arrays */
-    if (all_columns) {
-        for (int i = 0; i < tables->count; i++) {
-            if (all_columns[i]) {
-                fmp_free_columns(all_columns[i]);
-            }
-        }
-        free(all_columns);
-    }
-
-    fmp_free_tables(tables);
+    /* Clean up */
+    fmp_free_metadata(metadata);
     sqlite3_close(db);
     fmp_close_file(file);
 
