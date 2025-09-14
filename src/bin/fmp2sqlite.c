@@ -57,10 +57,21 @@ fmp_handler_status_t handle_value(int row, fmp_column_t *column, const char *val
         }
         sqlite3_clear_bindings(ctx->insert_stmt);
     }
-    /* Use column->index as the parameter position since we're using it in the SQL query */
-    int rc = sqlite3_bind_text(ctx->insert_stmt, column->index, value, strlen(value), SQLITE_TRANSIENT);
+    /* Map FileMaker column index to SQLite parameter position */
+    int param_pos = 0;
+    if (ctx->column_index_map && column->index <= ctx->max_column_index) {
+        param_pos = ctx->column_index_map[column->index];
+    }
+
+    if (param_pos == 0) {
+        /* Skip columns that weren't discovered in the schema - these might be deleted columns with leftover data */
+        return FMP_HANDLER_OK;  /* Skip this column silently */
+    }
+
+    int rc = sqlite3_bind_text(ctx->insert_stmt, param_pos, value, strlen(value), SQLITE_TRANSIENT);
     if (rc != SQLITE_OK) {
-        fprintf(stderr, "Error binding parameter at index %d: %s\n", column->index, sqlite3_errmsg(ctx->db));
+        fprintf(stderr, "Error binding parameter at position %d (column index %d): %s\n",
+                param_pos, column->index, sqlite3_errmsg(ctx->db));
         return FMP_HANDLER_ABORT;
     }
     ctx->last_row = row;
@@ -490,8 +501,8 @@ int main(int argc, char *argv[]) {
         p += snprintf(p, create_query_len - (p - create_query), ");");
         q += snprintf(q, insert_query_len - (q - insert_query), ") VALUES (");
         for (int j=0; j<columns->count; j++) {
-            fmp_column_t *column = &columns->columns[j];
-            q += snprintf(q, insert_query_len - (q - insert_query), "?%d", column->index);
+            /* Use sequential parameter positions, not column indices */
+            q += snprintf(q, insert_query_len - (q - insert_query), "?");
             if (j < columns->count - 1)
                 q += snprintf(q, insert_query_len - (q - insert_query), ", ");
         }
