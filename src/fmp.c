@@ -33,6 +33,8 @@
 #include <iconv.h>
 #include <stdarg.h>
 #include <libgen.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
 
 #include "fmp.h"
 #include "fmp_internal.h"
@@ -241,40 +243,126 @@ void free_chunk_chain(fmp_block_t *block) {
     block->chunk = NULL;
 }
 
+/* Load a block on-demand from mmap'd memory */
+static fmp_block_t *load_block_from_mmap(fmp_file_t *file, int block_idx) {
+    if (block_idx < 0 || block_idx >= file->num_blocks) {
+        return NULL;
+    }
+
+    /* Check if we have space in the blocks array AND should cache */
+    if (block_idx < file->blocks_allocated) {
+        /* Check if already loaded */
+        if (file->blocks[block_idx]) {
+            return file->blocks[block_idx];
+        }
+    }
+
+    /* Calculate offset in file */
+    size_t offset = (block_idx + 1) * file->sector_size;
+    if (offset >= file->file_size) {
+        return NULL;
+    }
+
+    /* Get pointer to sector data in mmap */
+    uint8_t *sector = ((uint8_t *)file->mmap_base) + offset;
+
+    /* Create block from sector */
+    fmp_error_t error = FMP_OK;
+    fmp_block_t *block = new_block_from_sector(file, sector, &error);
+
+    /* For large files, don't cache blocks - they'll be freed after use */
+    /* Only cache the first few blocks for repeated access */
+    if (block && error == FMP_OK && block_idx < 100 && block_idx < file->blocks_allocated) {
+        file->blocks[block_idx] = block;
+    }
+
+    return block;
+}
+
 fmp_error_t process_blocks(fmp_file_t *file,
         block_handler handle_block,
         chunk_handler handle_chunk,
         void *user_ctx) {
     fmp_error_t retval = FMP_OK;
-    /*
-    fmp_block_t *block = file->blocks[0];
-    process_block(file, block);
-    if (!handle_block || handle_block(block, user_ctx))
-        process_chunk_chain(file, block->chunk, handle_chunk, user_ctx);
-        */
     int next_block = 2;
-    int *blocks_visited = calloc(file->num_blocks, sizeof(int));
+
+    /* Debug: check memory allocation */
+    if (file->use_mmap) {
+        fprintf(stderr, "Processing blocks with mmap, num_blocks=%zu\n", file->num_blocks);
+    }
+
+    /* For large files, don't track all visited blocks - just detect loops */
+    int *blocks_visited = NULL;
+    int max_iterations = file->num_blocks * 2;  /* Safety limit */
+    int iteration = 0;
+
+    /* Only allocate visited array for small files */
+    if (file->num_blocks < 100000) {
+        blocks_visited = calloc(file->num_blocks, sizeof(int));
+    }
+
     do {
-        fmp_block_t *block = file->blocks[next_block-1];
+        fmp_block_t *block = NULL;
+
+        /* Load block on-demand for mmap'd files */
+        if (file->use_mmap) {
+            block = load_block_from_mmap(file, next_block - 1);
+        } else {
+            block = file->blocks[next_block - 1];
+        }
+
+        if (!block) {
+            retval = FMP_ERROR_BAD_SECTOR;
+            break;
+        }
+
         retval = process_block(file, block);
-        blocks_visited[next_block-1] = 1;
+
+        /* Only track visits for smaller files */
+        if (blocks_visited && next_block - 1 < file->num_blocks) {
+            if (blocks_visited[next_block-1]) {
+                /* Loop detected */
+                break;
+            }
+            blocks_visited[next_block-1] = 1;
+        }
+
         if (retval != FMP_OK) {
-            /*
-            fprintf(stderr, "ERROR processing block, reporting partial results...\n");
-            block->this_id = next_block;
-            if (!handle_block || handle_block(block, user_ctx))
-                process_chunk_chain(file, block->chunk, handle_chunk, user_ctx);
-                */
             break;
         }
         block->this_id = next_block;
         if (!handle_block || handle_block(block, user_ctx))
             retval = process_chunk_chain(file, block->chunk, handle_chunk, user_ctx);
-        next_block = block->next_id;
-    } while (next_block != 0 && next_block - 1 < file->num_blocks &&
-            !blocks_visited[next_block-1] && retval == FMP_OK);
+        int saved_next_id = block->next_id;
 
-    free(blocks_visited);
+        /* CRITICAL: Free the block if it's not cached (for large mmap files) */
+        int should_free = 0;
+        if (file->use_mmap) {
+            if (next_block - 1 >= file->blocks_allocated) {
+                /* Block index is beyond our cache array */
+                should_free = 1;
+            } else if (!file->blocks[next_block - 1]) {
+                /* Block wasn't cached */
+                should_free = 1;
+            }
+        }
+
+        if (should_free) {
+            free_chunk_chain(block);
+            free(block);
+        }
+
+        next_block = saved_next_id;
+
+        /* Safety check for large files without visited tracking */
+        if (++iteration > max_iterations) {
+            fprintf(stderr, "Warning: Too many iterations, possible loop\n");
+            break;
+        }
+    } while (next_block != 0 && next_block - 1 < file->num_blocks && retval == FMP_OK);
+
+    if (blocks_visited)
+        free(blocks_visited);
 
     return retval;
 }
@@ -328,6 +416,7 @@ static fmp_file_t *fmp_file_from_stream(FILE *stream, const char *filename, fmp_
         goto cleanup;
     }
     file->num_blocks = first_block->next_id;
+    file->blocks_allocated = first_block->next_id;  /* For non-mmap, we allocate all blocks */
     file->blocks[0] = first_block;
     first_block = NULL;
 
@@ -375,7 +464,171 @@ fmp_file_t *fmp_open_buffer(const void *buffer, size_t len, fmp_error_t *errorCo
     return fmp_file_from_stream(stream, NULL, errorCode);
 }
 
+/* Enhanced version with mmap support for large files */
+static fmp_file_t *fmp_open_file_mmap(const char *path, fmp_error_t *errorCode) {
+    struct stat st;
+    int fd = -1;
+    void *mmap_base = NULL;
+    fmp_file_t *file = NULL;
+    fmp_error_t retval = FMP_OK;
+
+    /* Open file for reading */
+    fd = open(path, O_RDONLY);
+    if (fd < 0) {
+        if (errorCode) *errorCode = FMP_ERROR_OPEN;
+        return NULL;
+    }
+
+    /* Get file size */
+    if (fstat(fd, &st) < 0) {
+        close(fd);
+        if (errorCode) *errorCode = FMP_ERROR_OPEN;
+        return NULL;
+    }
+
+    /* Map the file into memory */
+    mmap_base = mmap(NULL, st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
+    if (mmap_base == MAP_FAILED) {
+        close(fd);
+        if (errorCode) *errorCode = FMP_ERROR_MALLOC;
+        return NULL;
+    }
+
+    /* Allocate basic file structure */
+    file = calloc(1, sizeof(fmp_file_t));
+    if (!file) {
+        munmap(mmap_base, st.st_size);
+        close(fd);
+        if (errorCode) *errorCode = FMP_ERROR_MALLOC;
+        return NULL;
+    }
+
+    /* Initialize mmap fields */
+    file->mmap_base = mmap_base;
+    file->mmap_fd = fd;
+    file->use_mmap = 1;
+    file->file_size = st.st_size;
+
+    /* Extract filename */
+    char *path_copy = strdup(path);
+    if (path_copy) {
+        snprintf(file->filename, sizeof(file->filename), "%s", basename(path_copy));
+        free(path_copy);
+    }
+
+    /* Read header from mmap'd memory */
+    uint8_t *buf = (uint8_t *)mmap_base;
+    if (memcmp(buf, MAGICK, sizeof(MAGICK)-1)) {
+        retval = FMP_ERROR_BAD_MAGIC_NUMBER;
+        goto cleanup_error;
+    }
+
+    /* Parse header */
+    if (memcmp(&buf[15], "HBAM7", 5) == 0) {
+        file->sector_size = 4096;
+        file->xor_mask = 0x5A;
+        file->prev_sector_offset = 4;
+        file->next_sector_offset = 8;
+        file->payload_len_offset = -1;
+        file->sector_head_len = 20;
+        file->version_num = (buf[521] == 0x1E) ? 12 : 7;
+    } else {
+        file->sector_size = 1024;
+        file->xor_mask = 0x00;
+        file->sector_index_shift = 9;
+        file->prev_sector_offset = 4;
+        file->next_sector_offset = 8;
+        file->payload_len_offset = 12;
+        file->sector_head_len = 14;
+
+        if (memcmp(&buf[15], "HBAM3", 5) == 0) {
+            file->version_num = 3;
+            file->converter = iconv_open("UTF-8", "MACINTOSH");
+        } else if (memcmp(&buf[15], "HBAM5", 5) == 0) {
+            file->version_num = 5;
+            file->converter = iconv_open("UTF-8", "WINDOWS-1252");
+        }
+    }
+
+    /* Allocate path tracking */
+    file->path_capacity = 16;
+    file->path = calloc(file->path_capacity, sizeof(fmp_data_t *));
+    if (!file->path) {
+        retval = FMP_ERROR_MALLOC;
+        goto cleanup_error;
+    }
+
+    /* Parse first block to get block count */
+    fmp_block_t *first_block = new_block_from_sector(file, buf + file->sector_size, &retval);
+    if (!first_block || retval != FMP_OK) {
+        goto cleanup_error;
+    }
+
+    if (first_block->next_id == 0 ||
+        (first_block->next_id + 1 + (file->version_num < 7)) * file->sector_size != file->file_size) {
+        free(first_block);
+        retval = FMP_ERROR_BAD_SECTOR_COUNT;
+        goto cleanup_error;
+    }
+
+    file->num_blocks = first_block->next_id;
+
+    /* For mmap files, DON'T allocate huge array - just keep basic structure */
+    /* We'll allocate a smaller initial array and grow as needed */
+    size_t initial_blocks = 1024; /* Start with space for 1024 blocks */
+    if (file->num_blocks < initial_blocks) {
+        initial_blocks = file->num_blocks;
+    }
+
+    /* Reallocate file structure with limited block pointers */
+    fmp_file_t *new_file = realloc(file, sizeof(fmp_file_t) + initial_blocks * sizeof(fmp_block_t *));
+    if (!new_file) {
+        free(first_block);
+        retval = FMP_ERROR_MALLOC;
+        goto cleanup_error;
+    }
+    file = new_file;
+
+    /* Important: Restore mmap pointers after realloc */
+    file->mmap_base = mmap_base;
+    file->mmap_fd = fd;
+    file->use_mmap = 1;
+    file->blocks_allocated = initial_blocks;
+
+    /* Initialize only the allocated portion */
+    memset(file->blocks, 0, initial_blocks * sizeof(fmp_block_t *));
+    file->blocks[0] = first_block;
+
+    /* We'll load blocks on-demand instead of all at once */
+    /* This is the key change - we don't load all blocks into memory */
+
+    if (errorCode) *errorCode = FMP_OK;
+    return file;
+
+cleanup_error:
+    if (file) {
+        if (file->path) free(file->path);
+        free(file);
+    }
+    munmap(mmap_base, st.st_size);
+    close(fd);
+    if (errorCode) *errorCode = retval;
+    return NULL;
+}
+
 fmp_file_t *fmp_open_file(const char *path, fmp_error_t *errorCode) {
+    struct stat st;
+
+    /* Check file size first */
+    if (stat(path, &st) == 0) {
+        /* Use mmap for files larger than 100MB */
+        if (st.st_size > 100 * 1024 * 1024) {
+            fprintf(stderr, "File size %lld bytes, using mmap\n", (long long)st.st_size);
+            return fmp_open_file_mmap(path, errorCode);
+        }
+    }
+
+    /* Fall back to original implementation for smaller files */
     fmp_file_t *file = NULL;
     FILE *stream = fopen(path, "r");
     if (!stream) {
@@ -396,6 +649,17 @@ void fmp_close_file(fmp_file_t *file) {
         iconv_close(file->converter);
     if (file->path)
         free(file->path);
+
+    /* Handle mmap cleanup */
+    if (file->use_mmap) {
+        if (file->mmap_base) {
+            munmap(file->mmap_base, file->file_size);
+        }
+        if (file->mmap_fd >= 0) {
+            close(file->mmap_fd);
+        }
+    }
+
     for (int i=0; i<file->num_blocks; i++) {
         fmp_block_t *block = file->blocks[i];
         if (block) {

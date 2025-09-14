@@ -179,6 +179,11 @@ typedef struct fmp_file_s {
     size_t path_capacity;
     fmp_data_t **path;
     size_t num_blocks;
+    /* mmap support for large files */
+    void *mmap_base;
+    int mmap_fd;
+    int use_mmap;
+    size_t blocks_allocated;  /* Track how many block pointers we've allocated */
     fmp_block_t *blocks[];
 } fmp_file_t;
 
