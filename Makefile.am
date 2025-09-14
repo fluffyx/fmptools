@@ -25,10 +25,13 @@ fmp2json_LDADD = libfmptools.la -lyajl
 endif
 
 if HAVE_SQLITE
-bin_PROGRAMS += fmp2sqlite
+bin_PROGRAMS += fmp2sqlite fmp2sqlite_optimized
 
 fmp2sqlite_SOURCES = src/bin/fmp2sqlite.c src/bin/usage.c
 fmp2sqlite_LDADD = libfmptools.la -lsqlite3
+
+fmp2sqlite_optimized_SOURCES = src/bin/fmp2sqlite_optimized.c src/bin/usage.c
+fmp2sqlite_optimized_LDADD = libfmptools.la -lsqlite3
 endif
 
 fmpdump_SOURCES = src/bin/fmpdump.c
@@ -42,7 +45,8 @@ libfmptools_la_SOURCES = \
 	src/list_columns.c \
 	src/list_tables.c \
 	src/read_values.c \
-	src/discover_metadata.c
+	src/discover_metadata.c \
+	src/read_all_values.c
 
 libfmptools_la_LIBADD = @LIBICONV@
 libfmptools_la_CFLAGS = -Wall -Werror -pedantic-errors
