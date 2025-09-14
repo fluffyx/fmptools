@@ -103,6 +103,7 @@ typedef enum {
     FMP_CHUNK_FIELD_REF_SIMPLE,
     FMP_CHUNK_FIELD_REF_LONG,
     FMP_CHUNK_DATA_SEGMENT,
+    FMP_CHUNK_IGNORE,
 } fmp_chunk_type_t;
 
 typedef struct fmp_column_s {

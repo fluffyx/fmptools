@@ -202,18 +202,30 @@ fmp_metadata_t *fmp_discover_all_metadata(fmp_file_t *file, fmp_error_t *errorCo
     int j = 0;
     for (int i = 0; i < metadata->tables->count; i++) {
         if (metadata->tables->tables[i].index) {
+            size_t original_table_index = metadata->tables->tables[i].index;
+
             if (i != j) {
                 memmove(&metadata->tables->tables[j], &metadata->tables->tables[i], sizeof(fmp_table_t));
 
-                /* Also move the corresponding columns */
-                if (i + 1 < metadata->columns_capacity && metadata->columns[i + 1]) {
-                    if (j + 1 >= metadata->columns_capacity) {
+                /* Also move the corresponding columns using the original table index */
+                if (original_table_index < metadata->columns_capacity && metadata->columns[original_table_index]) {
+                    /* Store columns at position j (sequential) instead of original index */
+                    if (j >= metadata->columns_capacity) {
                         ensure_columns_capacity(metadata, j + 1);
                     }
-                    metadata->columns[j + 1] = metadata->columns[i + 1];
-                    if (i != j) {
-                        metadata->columns[i + 1] = NULL;
+                    metadata->columns[j] = metadata->columns[original_table_index];
+                    if (j != original_table_index) {
+                        metadata->columns[original_table_index] = NULL;
                     }
+                }
+            } else if (original_table_index < metadata->columns_capacity && metadata->columns[original_table_index]) {
+                /* Even if not moving table, need to move columns to sequential position */
+                if (j != original_table_index) {
+                    if (j >= metadata->columns_capacity) {
+                        ensure_columns_capacity(metadata, j + 1);
+                    }
+                    metadata->columns[j] = metadata->columns[original_table_index];
+                    metadata->columns[original_table_index] = NULL;
                 }
             }
             j++;
@@ -221,8 +233,8 @@ fmp_metadata_t *fmp_discover_all_metadata(fmp_file_t *file, fmp_error_t *errorCo
     }
     metadata->tables->count = j;
 
-    /* Compact columns arrays */
-    for (size_t t = 1; t <= metadata->tables->count && t < metadata->columns_capacity; t++) {
+    /* Compact columns arrays - now stored at sequential positions 0, 1, 2... */
+    for (size_t t = 0; t < metadata->tables->count && t < metadata->columns_capacity; t++) {
         if (metadata->columns[t]) {
             fmp_column_array_t *columns = metadata->columns[t];
             j = 0;

@@ -300,6 +300,18 @@ static fmp_error_t process_block_v7(fmp_block_t *block) {
             chunk->data.bytes = p;
             chunk->data.len = 3;
             p += chunk->data.len;
+        } else if ((c >= 0x2a && c <= 0x2f) || (c >= 0x31 && c <= 0x37) || c == 0x39 || c == 0x3a || c == 0x3b || c == 0x3c) {
+            /* Skip various 0x2X-0x3X range codes - appears to be metadata we can ignore */
+            chunk->type = FMP_CHUNK_IGNORE;
+            p++;
+            if (p >= end) {
+                retval = FMP_ERROR_DATA_EXCEEDS_SECTOR_SIZE;
+                free(chunk);
+                break;
+            }
+            chunk->data.len = *p++;
+            chunk->data.bytes = p;
+            p += chunk->data.len;
         } else if (c == 0x38) {
             chunk->type = FMP_CHUNK_PATH_PUSH;
             p++;
@@ -311,15 +323,46 @@ static fmp_error_t process_block_v7(fmp_block_t *block) {
             chunk->data.len = *p++;
             chunk->data.bytes = p;
             p += chunk->data.len;
-        } else if (c == 0x3d || c == 0x40) {
+        } else if (c >= 0x3d && c <= 0x40) {
             chunk->type = FMP_CHUNK_PATH_POP;
             p++;
         } else if (c == 0x80) {
             p++;
             free(chunk);
             continue;
+        } else if (c >= 0xd0 && c <= 0xfe) {
+            /* Skip high byte codes 0xd0-0xfe - appears to be metadata we can ignore */
+            chunk->type = FMP_CHUNK_IGNORE;
+            p++;
+            if (p >= end) {
+                retval = FMP_ERROR_DATA_EXCEEDS_SECTOR_SIZE;
+                free(chunk);
+                break;
+            }
+            /* These codes appear to have a length byte followed by data */
+            chunk->data.len = *p++;
+            chunk->data.bytes = p;
+            p += chunk->data.len;
+        } else if (c == 0xff) {
+            /* Handle 0xFF codes in v7 - skip for now */
+            chunk->type = FMP_CHUNK_IGNORE;
+            p++;
+            if (p >= end) {
+                /* 0xFF at end of block - just skip */
+                free(chunk);
+                continue;
+            }
+            /* Skip the extended code and its data */
+            p++; /* Skip extended code byte */
+            if (p >= end) {
+                free(chunk);
+                continue;
+            }
+            chunk->data.len = *p++;
+            chunk->data.bytes = p;
+            p += chunk->data.len;
         } else {
-            debug(" **** UNRECOGNIZED CODE 0x%02x @ [%llu] *****\n", c, p - block->payload);
+            fprintf(stderr, " **** UNRECOGNIZED CODE 0x%02x @ [%llu] *****\n", c, (unsigned long long)(p - block->payload));
             free(chunk);
             retval = FMP_ERROR_UNRECOGNIZED_CODE;
             break;
@@ -403,9 +446,10 @@ static fmp_error_t process_block_v3(fmp_block_t *block) {
             p += chunk->data.len;
         } else { // c == 0xFF
             if (p >= end) {
-                retval = FMP_ERROR_DATA_EXCEEDS_SECTOR_SIZE;
+                /* 0xFF at end of block - just skip it */
+                p++;
                 free(chunk);
-                break;
+                continue;
             }
             c = *++p;
             if (!c) {
@@ -437,9 +481,18 @@ static fmp_error_t process_block_v3(fmp_block_t *block) {
                 chunk->data.bytes = (p += 2);
                 p += chunk->data.len;
             } else {
-                fprintf(stderr, "Bad 0xFF chunk: %02x!\n", c);
-                free(chunk);
-                break;
+                /* For now, skip unknown 0xFF extended codes */
+                fprintf(stderr, "Warning: Skipping unknown 0xFF extended code: %02x @ [%llu]\n", c, (unsigned long long)(p - block->payload - 1));
+                chunk->type = FMP_CHUNK_IGNORE;
+                /* Try to skip based on common patterns - assume 1 byte length + data */
+                if (p >= end) {
+                    retval = FMP_ERROR_DATA_EXCEEDS_SECTOR_SIZE;
+                    free(chunk);
+                    break;
+                }
+                chunk->data.len = *p++;
+                chunk->data.bytes = p;
+                p += chunk->data.len;
             }
             chunk->extended = 1;
         }

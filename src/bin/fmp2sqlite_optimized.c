@@ -192,10 +192,10 @@ int main(int argc, char *argv[]) {
     for (size_t i = 0; i < metadata->tables->count; i++) {
         fmp_table_t *table = &metadata->tables->tables[i];
 
-        /* Get columns for this table */
+        /* Get columns for this table - now stored at sequential position i */
         fmp_column_array_t *columns = NULL;
-        if (table->index < metadata->columns_capacity) {
-            columns = metadata->columns[table->index];
+        if (i < metadata->columns_capacity) {
+            columns = metadata->columns[i];
         }
 
         if (!columns || columns->count == 0) {
@@ -238,7 +238,7 @@ int main(int argc, char *argv[]) {
             col_map[columns->columns[j].index] = j + 1;  /* SQLite params are 1-based */
         }
 
-        /* Store context for this table */
+        /* Store context for this table using original index for lookup during data read */
         ctx.table_contexts[table->index] = (table_context_t){
             .insert_stmt = stmt,
             .column_index_map = col_map,
