@@ -1,4 +1,5 @@
 AUTOMAKE_OPTIONS = foreign dist-zip
+ACLOCAL_AMFLAGS = -I m4
 
 lib_LTLIBRARIES = libfmptools.la
 noinst_PROGRAMS = fmpdump

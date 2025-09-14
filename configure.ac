@@ -1,4 +1,5 @@
 AC_INIT([FMPTools],[0.2.2],[https://github.com/evanmiller/fmptools/issues],[fmptools],[https://github.com/evanmiller/fmptools])
+AC_CONFIG_MACRO_DIRS([m4])
 
 AM_INIT_AUTOMAKE([foreign subdir-objects])
 AM_SILENT_RULES([yes])
