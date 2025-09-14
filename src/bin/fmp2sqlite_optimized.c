@@ -47,13 +47,13 @@ fmp_handler_status_t handle_all_values(int table_index, int row, fmp_column_t *c
         int rc = sqlite3_step(tctx->insert_stmt);
         if (rc != SQLITE_DONE) {
             fprintf(stderr, "Error inserting data into table %s: %s\n",
-                    tctx->table->utf8_name, sqlite3_errmsg(ctx->db));
+                    tctx->table ? tctx->table->utf8_name : "(unknown)", sqlite3_errmsg(ctx->db));
             return FMP_HANDLER_ABORT;
         }
         rc = sqlite3_reset(tctx->insert_stmt);
         if (rc != SQLITE_OK) {
             fprintf(stderr, "Error resetting INSERT statement for table %s: %s\n",
-                    tctx->table->utf8_name, sqlite3_errmsg(ctx->db));
+                    tctx->table ? tctx->table->utf8_name : "(unknown)", sqlite3_errmsg(ctx->db));
             return FMP_HANDLER_ABORT;
         }
         sqlite3_clear_bindings(tctx->insert_stmt);
@@ -73,7 +73,7 @@ fmp_handler_status_t handle_all_values(int table_index, int row, fmp_column_t *c
     int rc = sqlite3_bind_text(tctx->insert_stmt, param_pos, value, strlen(value), SQLITE_TRANSIENT);
     if (rc != SQLITE_OK) {
         fprintf(stderr, "Error binding parameter for table %s at position %d: %s\n",
-                tctx->table->utf8_name, param_pos, sqlite3_errmsg(ctx->db));
+                tctx->table ? tctx->table->utf8_name : "(unknown)", param_pos, sqlite3_errmsg(ctx->db));
         return FMP_HANDLER_ABORT;
     }
 

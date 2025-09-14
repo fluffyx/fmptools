@@ -24,8 +24,7 @@ SELECT
     _RECORD_RecID,
     _RECORD_ParentRecID,
     TaskGroupRecID,
-    _VL_TaskGroupRecID,
-    LICodeRecID
+    _VL_TaskGroupRecID
 FROM InvoiceItems
 WHERE _RECORD_RecID IS NOT NULL
 LIMIT 5;

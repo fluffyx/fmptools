@@ -132,10 +132,8 @@ static chunk_status_t handle_chunk_discover_v7(fmp_chunk_t *chunk, fmp_discover_
         return CHUNK_NEXT;
     }
 
-    /* Stop scanning once we're past the metadata section */
-    if (path_value(chunk, chunk->path[0]) > 3 && path_value(chunk, chunk->path[0]) < 128) {
-        return CHUNK_DONE;
-    }
+    /* Continue scanning - metadata might not be contiguous */
+    /* Tables and columns can appear throughout the file */
 
     return CHUNK_NEXT;
 }
